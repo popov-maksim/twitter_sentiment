@@ -1,27 +1,30 @@
+package src.main.scala
+
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.SparkConf
-import org.apache.spark.ml.{Pipeline, PipelineModel}
-import org.apache.spark.ml.classification.GBTClassifier
-import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
-import org.apache.spark.ml.feature.{HashingTF, Tokenizer}
+import org.apache.spark.ml.tuning.CrossValidatorModel
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
+
 object MainClass {
 
   // specify here dataset used for training
-  val dataset: String = "train.csv"
+  val dataset: String = "train.csv" // change for HDFS
+  val ipAddress: String = "10.91.66.168"
+  val port: Int = 8989
+  val pathToModel: String = "trained_model" // change for HDFS
 
   def main(args: Array[String]): Unit = {
 
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
 
-    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local")
+    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
     val spark = SparkSession.builder().config(conf).getOrCreate()
-    val ssc = new StreamingContext(conf, Seconds(1))
+    //val ssc = new StreamingContext(conf, Seconds(1))
 
     val isTrain: Boolean = whichMode(args)
 
@@ -30,17 +33,28 @@ object MainClass {
 
       val df: DataFrame = loadData(spark)
 
-      // split data on train and test
-      val Array(trainingData, testData) = df.randomSplit(Array(0.8, 0.2))
-
       val labelColumn: String = "label"
-      val model: PipelineModel = train(trainingData, labelColumn)
-      val f1: Double = validate(testData, model, labelColumn)
+      val predictionColumn: String = "predicted column"
 
-      println("F1 score on test: " + f1)
+      val clf1 = new LogisticRegressionClassifier(labelColumn, predictionColumn)
+
+      val model: CrossValidatorModel = clf1.crossValidate(df)
+
+      val f1: Double = model.getEvaluator
+        .evaluate(model
+          .transform(df)
+          .select(labelColumn, predictionColumn))
+
+      // TODO choose the best one based on the metric
+
+      println("F1 score on train: " + f1)
+
+      model.write.overwrite().save(pathToModel)
 
     } else {
-      println("Ready to listen to Twitter")
+      println("Ready to listen to Twitter. To train a model first use param [train].")
+      val model = CrossValidatorModel.load(pathToModel)
+      // TODO transformations on twits and run through model
     }
 
   }
@@ -55,7 +69,9 @@ object MainClass {
     }
   }
 
-  def loadData(spark: SparkSession): DataFrame ={
+  // as a dataset for training there is used Twitter Sentiment (https://www.kaggle.com/c/twitter-sentiment-analysis2/data)
+  def loadData(spark: SparkSession): DataFrame = {
+
     // defining a schema for the DataFrame
     val schemaStruct = StructType(
         StructField("id", IntegerType) ::
@@ -72,61 +88,6 @@ object MainClass {
       .drop("id")
       .drop("original text")
       .na.drop()
-  }
-
-  def train(trainDF: DataFrame, labelColumn: String, saveModel: Boolean = true): PipelineModel = {
-    // describing preprocessing steps
-    val tokenizer = new Tokenizer()
-      .setInputCol("text")
-      .setOutputCol("words")
-
-    val hashingTF = new HashingTF()
-      .setNumFeatures(1000)
-      .setInputCol(tokenizer.getOutputCol)
-      .setOutputCol("features")
-
-    val gbt = new GBTClassifier()
-      .setLabelCol(labelColumn)
-      .setFeaturesCol("features")
-      .setPredictionCol("Predicted " + labelColumn)
-      .setMaxIter(50)
-
-    val stages = Array(
-      tokenizer,
-      hashingTF,
-      gbt
-    )
-
-    // creating a pipeline
-    val pipeline = new Pipeline().setStages(stages)
-
-    // fitting the model
-    val model: PipelineModel = pipeline.fit(trainDF)
-
-    if (saveModel) {
-      model.write.overwrite().save("trained_model")
-    }
-
-    model
-
-  }
-
-  def validate(testDF: DataFrame, model: PipelineModel, labelColumn: String): Double = {
-    //We'll make predictions using the model and the test data
-    val predictions = model.transform(testDF)
-
-    //This will evaluate the error/deviation of the regression using the Root Mean Squared deviation
-    val evaluator = new BinaryClassificationEvaluator()
-      .setLabelCol(labelColumn)
-      .setRawPredictionCol("Predicted " + labelColumn)
-      .setMetricName("fMeasure")
-
-    evaluator.evaluate(predictions)
-
-  }
-
-  def predict(): Unit = {
-
   }
 
 }

@@ -3,3 +3,4 @@ target
 out
 output.txt
 project
+trained_model
