@@ -24,7 +24,8 @@ object MainClass {
 
     val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
     val spark = SparkSession.builder().config(conf).getOrCreate()
-    //val ssc = new StreamingContext(conf, Seconds(1))
+    val sc = spark.sparkContext
+    val ssc = new StreamingContext(sc, Seconds(1))
 
     val isTrain: Boolean = whichMode(args)
 
