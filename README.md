@@ -2,6 +2,6 @@
 Spark application on Scala for analyzing sentiment
 
 # Usage
-When .jar was created run it with corresponding parameters: MODE.
-MODE: train|run.
-For MODE run, also, specify: FILENAME_1 FILENAME_2, for words' count and predicted sentiments correspondingly.
+When .jar was created run it with corresponding parameters: **mode**. <br />
+**mode**: train|run. <br />
+For **mode** = run, also, specify: **filename_1** **filename_2**, for words' count and predicted sentiments correspondingly.
