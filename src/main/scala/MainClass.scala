@@ -28,28 +28,32 @@ object MainClass {
 
     val isTrain: Boolean = whichMode(args)
 
-    if (isTrain) {
+    if (!isTrain) {
       println("Train mode")
 
       val df: DataFrame = loadData(spark)
+//      val df = spark.read.format("libsvm").load("train.csv")
 
       val labelColumn: String = "label"
       val predictionColumn: String = "predicted column"
 
-      val clf1 = new LogisticRegressionClassifier(labelColumn, predictionColumn)
+      val clf1 = new LogisticRegressionClassifier(labelColumn, predictionColumn, df)
 
-      val model: CrossValidatorModel = clf1.crossValidate(df)
 
-      val f1: Double = model.getEvaluator
-        .evaluate(model
-          .transform(df)
-          .select(labelColumn, predictionColumn))
+//      val clf2 = new NN(labelColumn, predictionColumn, df)
 
-      // TODO choose the best one based on the metric
-
-      println("F1 score on train: " + f1)
-
-      model.write.overwrite().save(pathToModel)
+//      val model: CrossValidatorModel = clf1.train()
+//
+//      val f1: Double = model.getEvaluator
+//        .evaluate(model
+//          .transform(df)
+//          .select(labelColumn, predictionColumn))
+//
+//      // TODO choose the best one based on the metric
+//
+//      println("F1 score on train: " + f1)
+//
+//      model.write.overwrite().save(pathToModel)
 
     } else {
       println("Ready to listen to Twitter. To train a model first use param [train].")
