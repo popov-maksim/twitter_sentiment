@@ -18,6 +18,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 object PreProcessing {
+
   def lowerCase(dataset: Dataset[Row], column: String): Dataset[Row] = {
     dataset.withColumn(column, regexp_replace(lower(dataset(column)), "[^a-zA-Z0-9 ]", ""));
   }
