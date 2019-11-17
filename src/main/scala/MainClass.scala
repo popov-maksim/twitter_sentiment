@@ -20,6 +20,7 @@ object MainClass {
   val port: Int = 8989
 
   val pathToModel: String = "trained_model"
+  val checkpointDirectory: String = "checkpoint"
 
   val trainMode = true
   val testMode = false
@@ -31,7 +32,6 @@ object MainClass {
     val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
     val spark = SparkSession.builder().config(conf).getOrCreate()
     val sc = spark.sparkContext
-    val ssc = new StreamingContext(sc, Seconds(1))
 
     val (mode, wordOut, predOut) = parseArgs(args)
 
@@ -45,25 +45,28 @@ object MainClass {
 
       val clf1 = new LogisticRegressionClassifier(labelColumn, predictionColumn, df)
 
-
-
     } else {
       println("Ready to listen to Twitter. To train a model first use param [train].")
+
+      // Function to create and setup a new StreamingContext
+      val ssc = new StreamingContext(sc, Seconds(1))
+      ssc.checkpoint(checkpointDirectory)
 
       val model = CrossValidatorModel.load(pathToModel)
 
       val twits = ssc.socketTextStream(ipAddress, port)
 
       // counting words for
-      twits.flatMap(_.split(" "))
+      val word_count = twits.flatMap(_.split(" "))
           .map(word => (word, 1))
-          .reduceByKey(_ + _)
+          .updateStateByKey(updateFunction _)
           .map(x => (x._2, x._1))
-          .foreachRDD{ (rdd: RDD[(Int, String)], _) =>
-            rdd.sortByKey()
-              .map(x => (x._1, x._2))
-              .saveAsTextFile(wordOut) // write result to file
-          }
+
+      word_count.foreachRDD{ (rdd: RDD[(Int, String)], _) =>
+        rdd.sortByKey()
+          .map(x => (x._1, x._2))
+          .saveAsTextFile(wordOut) // write result to file
+      }
 
       // inferencing sentiment of a twit
       twits.foreachRDD { (rdd: RDD[String], time: Time) =>
@@ -146,6 +149,11 @@ object MainClass {
       .drop("id")
       .drop("original text")
       .na.drop()
+  }
+
+  def updateFunction(newValues: Seq[Int], runningCount: Option[Int]): Option[Int] = {
+    val newCount: Int = newValues.sum + runningCount.getOrElse(0)
+    Some(newCount)
   }
 
 }
