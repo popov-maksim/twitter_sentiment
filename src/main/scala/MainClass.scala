@@ -4,11 +4,12 @@ import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.PipelineModel
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.streaming.{Seconds, State, StateSpec, StreamingContext, Time}
+import org.apache.spark.streaming.{Seconds, StreamingContext, Time}
 
 
 object MainClass {
