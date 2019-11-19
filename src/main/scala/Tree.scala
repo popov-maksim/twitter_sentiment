@@ -20,7 +20,7 @@ class Tree(target: String, pred: String, data: DataFrame) {
     .setOutputCol("features")
     .setMinDF(30)
 
-  // Split the data into training and test sets (30% held out for testing).
+  // Split the data into training and test sets (20% held out for testing).
   val Array(trainingData, testData) = data.randomSplit(Array(0.8, 0.2))
 
   // create the trainer and set its parameters
