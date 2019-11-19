@@ -3,37 +3,38 @@ package src.main.scala
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.SparkConf
-import org.apache.spark.ml.tuning.CrossValidatorModel
+import org.apache.spark.ml.PipelineModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.streaming.{Seconds, StreamingContext, Time}
+import org.apache.spark.streaming.{Seconds, State, StateSpec, StreamingContext, Time}
 
 
 object MainClass {
-
   // specify here dataset used for training
   val dataset: String = "train.csv"
 
-  val ipAddress: String = "10.91.66.168"
+  // for streaming
+  val ipAddress: String = "10.90.138.32"
   val port: Int = 8989
 
+  // basic paths
   val pathToModel: String = "trained_model"
   val checkpointDirectory: String = "checkpoint"
 
+  // some constants
   val trainMode = true
   val testMode = false
 
   def main(args: Array[String]): Unit = {
-
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
 
-    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
+    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter")//.setMaster("local") // change for running on Cluster
     val spark = SparkSession.builder().config(conf).getOrCreate()
     val sc = spark.sparkContext
 
-    val (mode, wordOut, predOut) = parseArgs(args)
+    val (mode, predOut) = parseArgs(args)
 
     val labelColumn: String = "label"
     val predictionColumn: String = "predicted column"
@@ -44,7 +45,6 @@ object MainClass {
       val df: DataFrame = loadData(spark)
 
       val clf1 = new LogisticRegressionClassifier(labelColumn, predictionColumn, df)
-
     } else {
       println("Ready to listen to Twitter. To train a model first use param [train].")
 
@@ -52,76 +52,67 @@ object MainClass {
       val ssc = new StreamingContext(sc, Seconds(1))
       ssc.checkpoint(checkpointDirectory)
 
-      val model = CrossValidatorModel.load(pathToModel)
+      val model = PipelineModel.load(pathToModel)
 
       val twits = ssc.socketTextStream(ipAddress, port)
+      twits.print()
 
-      // counting words for
-      val word_count = twits.flatMap(_.split(" "))
-          .map(word => (word, 1))
+      // counting words
+      twits.flatMap(_.split(" "))
+          .map(word => (word.toLowerCase(), 1))
           .updateStateByKey(updateFunction _)
-          .map(x => (x._2, x._1))
-
-      word_count.foreachRDD{ (rdd: RDD[(Int, String)], _) =>
-        rdd.sortByKey()
-          .map(x => (x._1, x._2))
-          .saveAsTextFile(wordOut) // write result to file
-      }
+          .transform(rdd => rdd.map(x => (x._2, x._1))
+            .sortByKey(ascending = false)
+            .map(x => (x._2, x._1)))
+          .print()
 
       // inferencing sentiment of a twit
       twits.foreachRDD { (rdd: RDD[String], time: Time) =>
-        import spark.implicits._
+        if (!rdd.isEmpty())
+        {
+          import spark.implicits._
 
-        val input = rdd.toString()
+          val input: String = rdd.first()
 
-        println("Twit: " + input)
+          val data = Seq((1.0, input))
+          val df = data.toDF(labelColumn, "text")
+          val prediction = model.transform(df)
+            .select(predictionColumn)
+            .first().toString()
 
-        val data = Seq((1.0, input))
-        val df = sc.parallelize(data).toDF(labelColumn, "text")
-        val prediction = model.transform(df)
-          .select(predictionColumn)
-          .first()
-
-        // write result to file
-        sc.parallelize(Seq((time, input, prediction)))
-          .saveAsTextFile(predOut)
-
+          // write result to file
+          Seq((time.toString(), input, prediction))
+            .toDF("Time", "Text", "Sentiment")
+            .coalesce(1)
+            .write
+            .mode(SaveMode.Append)
+            .csv(predOut)
+        }
       }
 
-      // don't know whether it is needed
       ssc.start()
       ssc.awaitTermination()
-
     }
-
   }
 
-  def parseArgs(args: Array[String]): (Boolean, String, String) = {
-
+  def parseArgs(args: Array[String]): (Boolean, String) = {
     if (args.length < 1) {
-      println("set up params <mode> <filename for word counts> <filename for predictions>")
+      println("set up params <mode> <filename for predictions>")
 
-      (true, "", "")
-
+      (true, "")
     }
     else {
-
       val mode = getMode(args(0))
 
-      val defaultWordOut = "word_count"
       val defaultPredOut = "pred_out.csv"
 
       if (args.length < 2) {
-        (mode, defaultWordOut, defaultPredOut)
+        (mode, defaultPredOut)
       }
-      else if (args.length < 3) {
-        (mode, args(1), defaultPredOut)
-      }else {
-        (mode, args(1), args(2))
+      else {
+        (mode, args(1))
       }
-
     }
-
   }
 
   // getting mode from given args
@@ -132,7 +123,6 @@ object MainClass {
 
   // as a dataset for training there is used Twitter Sentiment (https://www.kaggle.com/c/twitter-sentiment-analysis2/data)
   def loadData(spark: SparkSession): DataFrame = {
-
     // defining a schema for the DataFrame
     val schemaStruct = StructType(
         StructField("id", IntegerType) ::
@@ -155,5 +145,4 @@ object MainClass {
     val newCount: Int = newValues.sum + runningCount.getOrElse(0)
     Some(newCount)
   }
-
 }
