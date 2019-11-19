@@ -8,6 +8,7 @@ import org.apache.spark.ml.tuning.CrossValidatorModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions._
 import org.apache.spark.streaming.{Seconds, StreamingContext, Time}
 
@@ -53,7 +54,7 @@ object MainClass {
       val ssc = new StreamingContext(sc, Seconds(1))
       ssc.checkpoint(checkpointDirectory)
 
-      val model = CrossValidatorModel.load(pathToModel)
+      val model = PipelineModel.load(pathToModel)
 
       val twits = ssc.socketTextStream(ipAddress, port)
 
@@ -61,13 +62,6 @@ object MainClass {
       val word_count = twits.flatMap(_.split(" "))
           .map(word => (word, 1))
           .updateStateByKey(updateFunction _)
-          .map(x => (x._2, x._1))
-
-      word_count.foreachRDD{ (rdd: RDD[(Int, String)], _) =>
-        rdd.sortByKey()
-          .map(x => (x._1, x._2))
-          .saveAsTextFile(wordOut) // write result to file
-      }
 
       // inferencing sentiment of a twit
       twits.foreachRDD { (rdd: RDD[String], time: Time) =>
@@ -91,6 +85,12 @@ object MainClass {
 
       ssc.start()
       ssc.awaitTermination()
+
+      word_count.map(x => (x._2, x._1)).foreachRDD{ (rdd: RDD[(Int, String)], _) =>
+        rdd.sortByKey()
+          .map(x => (x._1, x._2))
+          .saveAsTextFile(wordOut) // write result to file
+      }
 
     }
 
