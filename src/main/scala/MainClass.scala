@@ -3,10 +3,12 @@ package src.main.scala
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.SparkConf
+import org.apache.spark.ml.PipelineModel
 import org.apache.spark.ml.tuning.CrossValidatorModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions._
 import org.apache.spark.streaming.{Seconds, StreamingContext, Time}
 
@@ -16,10 +18,11 @@ object MainClass {
   // specify here dataset used for training
   val dataset: String = "train.csv"
 
-  val ipAddress: String = "10.91.66.168"
+  val ipAddress: String = "10.90.138.32"
   val port: Int = 8989
 
   val pathToModel: String = "trained_model"
+  val checkpointDirectory: String = "checkpoint"
 
   val trainMode = true
   val testMode = false
@@ -27,11 +30,10 @@ object MainClass {
   def main(args: Array[String]): Unit = {
 
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
-
-    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
+    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter")
+//    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
     val spark = SparkSession.builder().config(conf).getOrCreate()
     val sc = spark.sparkContext
-    val ssc = new StreamingContext(sc, Seconds(1))
 
     val (mode, wordOut, predOut) = parseArgs(args)
 
@@ -45,25 +47,21 @@ object MainClass {
 
       val clf1 = new LogisticRegressionClassifier(labelColumn, predictionColumn, df)
 
-
-
     } else {
       println("Ready to listen to Twitter. To train a model first use param [train].")
 
-      val model = CrossValidatorModel.load(pathToModel)
+      // Function to create and setup a new StreamingContext
+      val ssc = new StreamingContext(sc, Seconds(1))
+      ssc.checkpoint(checkpointDirectory)
+
+      val model = PipelineModel.load(pathToModel)
 
       val twits = ssc.socketTextStream(ipAddress, port)
 
       // counting words for
-      twits.flatMap(_.split(" "))
+      val word_count = twits.flatMap(_.split(" "))
           .map(word => (word, 1))
-          .reduceByKey(_ + _)
-          .map(x => (x._2, x._1))
-          .foreachRDD{ (rdd: RDD[(Int, String)], _) =>
-            rdd.sortByKey()
-              .map(x => (x._1, x._2))
-              .saveAsTextFile(wordOut) // write result to file
-          }
+          .updateStateByKey(updateFunction _)
 
       // inferencing sentiment of a twit
       twits.foreachRDD { (rdd: RDD[String], time: Time) =>
@@ -85,9 +83,14 @@ object MainClass {
 
       }
 
-      // don't know whether it is needed
       ssc.start()
       ssc.awaitTermination()
+
+      word_count.map(x => (x._2, x._1)).foreachRDD{ (rdd: RDD[(Int, String)], _) =>
+        rdd.sortByKey()
+          .map(x => (x._1, x._2))
+          .saveAsTextFile(wordOut) // write result to file
+      }
 
     }
 
@@ -146,6 +149,11 @@ object MainClass {
       .drop("id")
       .drop("original text")
       .na.drop()
+  }
+
+  def updateFunction(newValues: Seq[Int], runningCount: Option[Int]): Option[Int] = {
+    val newCount: Int = newValues.sum + runningCount.getOrElse(0)
+    Some(newCount)
   }
 
 }
