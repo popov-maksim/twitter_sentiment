@@ -3,6 +3,7 @@ package src.main.scala
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.SparkConf
+import org.apache.spark.ml.PipelineModel
 import org.apache.spark.ml.tuning.CrossValidatorModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
@@ -16,7 +17,7 @@ object MainClass {
   // specify here dataset used for training
   val dataset: String = "train.csv"
 
-  val ipAddress: String = "10.91.66.168"
+  val ipAddress: String = "10.90.138.32"
   val port: Int = 8989
 
   val pathToModel: String = "trained_model"
@@ -28,8 +29,8 @@ object MainClass {
   def main(args: Array[String]): Unit = {
 
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
-
-    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
+    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter")
+//    val conf = new SparkConf().setAppName("KusalMaxDanMishaTwitter").setMaster("local") // change for running on Cluster
     val spark = SparkSession.builder().config(conf).getOrCreate()
     val sc = spark.sparkContext
 
@@ -88,7 +89,6 @@ object MainClass {
 
       }
 
-      // don't know whether it is needed
       ssc.start()
       ssc.awaitTermination()
 
