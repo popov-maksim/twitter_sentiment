@@ -45,7 +45,7 @@ class Tree(target: String, pred: String, data: DataFrame) {
 
 
   println(s"Test set accuracy = ${evaluator.evaluate(model
-    .transform(trainingData)
+    .transform(testData)
     .select(labelColumn, predictionColumn))}")
 
 }
